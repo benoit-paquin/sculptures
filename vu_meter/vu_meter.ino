@@ -48,7 +48,7 @@ unsigned int ReadADC() {
   low = ADCL;
   high = ADCH;
   Read = max(Read>>1, high<<8 | low);    // Add delay  
-  if (Read < 64) { Read = Read/8;}
+  if (Read < 50) { Read = Read/8;}
   //if (Read < 64) {  Read = Read-8;}
   return Read;
 }
