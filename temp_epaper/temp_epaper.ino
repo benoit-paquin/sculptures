@@ -96,7 +96,7 @@ void loop()
     bool high_bat = false;
     bool low_bat = false;
     high_bat = (vcc>3800); // more than 3.8V means high, display bluetooth icon
-    low_bat = (vcc<3200);  // less than 3.2V means low, display battery icon
+    low_bat = (vcc<2900);  // less than 3.2V means low, display battery icon
     read_temp(&temp, &hum);
     if (old_temp != temp || old_hum != hum){ // if any changes from last read
       update_epaper(temp, hum , high_bat, low_bat);
