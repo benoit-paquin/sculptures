@@ -18,6 +18,7 @@ float old_temp = -1.0; // only update display if the temp changed.
 float old_hum = -1.0;
 long old_vcc = 9999; //if vcc is greater than old_vcc, blink green longer.  
 int watchdog_counter = 0; // number of interrupt
+bool charging = false; // true when VCC has increased.
 // ---- Utilities
 void blink (bool green, byte cnt, bool long_blink) {
   // blink led cnt time.
@@ -90,7 +91,9 @@ void loop()
     // determine battery state
     long vcc = readVcc(); 
     if (vcc > old_vcc) {
-      blink(true, 2, true);
+      charging = true;
+    } else {
+      charging = false;
     }
     old_vcc = vcc;
     bool high_bat = false;
@@ -109,6 +112,9 @@ void loop()
     } else {
       blink(true,1, false);
     }
+  if (charging) {
+    blink(true, 2, true);
+  }
   setup_watchdog(9); //Setup watchdog to go off after 8sec
   sleep_mode(); //Go to sleep! Wake up 8 sec later
 }
