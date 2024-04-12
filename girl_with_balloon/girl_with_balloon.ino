@@ -19,9 +19,9 @@
 #define wakeupInterval 8
 
 // define time limits and global variables
-// set to 10 and 1 minute for testing
-int oneHour= (1*60)/wakeupInterval; // changed to 10 minutes for test. number of watchdog timers during 1 hour is you wake up every 8 seconds
-int oneWeek= (10*60)/wakeupInterval; // number of watchdog timers during a full week.
+// set to 1 day and 60 minutes for testing
+int oneHour= (60*60)/wakeupInterval; // changed to 10 minutes for test. number of watchdog timers during 1 hour is you wake up every 8 seconds
+int oneWeek= (24*60)/wakeupInterval; // number of watchdog timers during a full week.
 int watchdog_counter =  0; //initialise watchdog counter
 int lastHum = 9999;
 int lastWatering = 0;
@@ -102,6 +102,8 @@ void setup() {
   pinMode(legGround, OUTPUT);
   digitalWrite(legGround, LOW); 
   balloon('s');
+  heartBeat();
+  delay(50);
   heartBeat();
   balloon('l'); 
 }
