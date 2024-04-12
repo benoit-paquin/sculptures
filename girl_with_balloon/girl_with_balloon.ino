@@ -1,25 +1,27 @@
 // Plant watering monitoring system
 // Check the moisture of the plant every 8 seconds, blink heart every 8 seconds too 
 // Check the moisture: Moisture is higher when the reading is lower. The code reflects this.
-//  If it is higher than the previous reading+5%, set maxHum to reading, set lastWatering to watchdog count, blink slowly red
+//  If it is higher than the previous reading+5%, set maxHum to reading, set lastWatering to watchdog count, blink red fast & short
 //  if it is lower than minHum, set minHum to reading.
 //  if lastWatering is more than 1 week old then:
-//       if the last blink is more than one hour, blink red led at short intervals and set last blink time to current watchdog_counter.
+//       if the last blink is more than one hour, blink red led at long intervals and set last blink time to current watchdog_counter.
 
 
 #include <avr/sleep.h> //Needed for sleep_mode
 #include <avr/wdt.h> //Needed to enable/disable watch dog timer
 
-// attiny85 pin setup, pin 2 is not used.
+// attiny85 pin setup, pin 1 is not used and grounded.
 #define balloonLed 4
 #define hearthLed 3
-#define legPower 0
+#define legPower 1
 #define legHum A1
+#define legGround 0
 #define wakeupInterval 8
 
 // define time limits and global variables
-int oneHour= (10*60)/wakeupInterval; // changed to 10 minutes for test. number of watchdog timers during 1 hour is you wake up every 8 seconds
-int oneWeek= (60*60)/wakeupInterval; // number of watchdog timers during a full week.
+// set to 10 and 1 minute for testing
+int oneHour= (1*60)/wakeupInterval; // changed to 10 minutes for test. number of watchdog timers during 1 hour is you wake up every 8 seconds
+int oneWeek= (10*60)/wakeupInterval; // number of watchdog timers during a full week.
 int watchdog_counter =  0; //initialise watchdog counter
 int lastHum = 9999;
 int lastWatering = 0;
@@ -40,11 +42,11 @@ int readWatering() {
 
 void detectWatering(int level) {
   // lower argument 'level' denotes a higher humidity
-  if(level < 0.95*lastHum) {
+  if(level < 0.90*lastHum) {
     lastWatering = watchdog_counter;
-    lastHum = level;
-    balloon('l'); // long blink
+    balloon('s'); // short blink
   }
+  lastHum = level;
 }
 
 void detectNoWatering() {
@@ -52,12 +54,12 @@ void detectNoWatering() {
   if (watchdog_counter > lastWatering + oneWeek) {
     if (watchdog_counter > lastBalloonBlink + oneHour){
       lastBalloonBlink = watchdog_counter;
-      balloon('s');
+      balloon('l');
     }
   }
 }
 
-void hearthBeat() {
+void heartBeat() {
   // blink the heart led, sleep 64 ms while the LED is lit before turning off the led.
   // as the watchdog timer will increase the watchdog_counter value, decrease it by 1 otherwise it will changes the time limits.
   digitalWrite(hearthLed, HIGH);
@@ -68,14 +70,14 @@ void hearthBeat() {
 }
 
 void balloon(char shortLong) {
-  // blink the red balloon 5 times. For short blink, 64ms. Long blink: 500ms.
-  for (byte i=0; i < 5; i++) {
+  // blink the red balloon 5/10 times. For short blink, 64ms. Long blink: 500ms.
+  for (byte i=0; i < ((shortLong == 's')?10:5); i++) {
     digitalWrite(balloonLed,HIGH);
     setup_watchdog((shortLong == 's')?2:5); //Setup watchdog to go off after 64/500ms
     sleep_mode(); //Go to sleep!
     watchdog_counter--;
     digitalWrite(balloonLed,LOW);
-    if (i!=4) { // do not suspend after the last blink.
+    if (i!=((shortLong == 's')?9:4)) { // do not suspend after the last blink.
       sleep_mode();
       watchdog_counter--;
     }
@@ -96,11 +98,16 @@ void setup() {
   pinMode(balloonLed,OUTPUT);
   pinMode(hearthLed,OUTPUT);
   pinMode(legPower, OUTPUT);
-  pinMode(legHum, INPUT);  
+  pinMode(legHum, INPUT);
+  pinMode(legGround, OUTPUT);
+  digitalWrite(legGround, LOW); 
+  balloon('s');
+  heartBeat();
+  balloon('l'); 
 }
 
 void loop() {
-  hearthBeat();
+  heartBeat();
   int level = readWatering();
   detectWatering(level);
   detectNoWatering();
