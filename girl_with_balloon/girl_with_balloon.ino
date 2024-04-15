@@ -19,10 +19,10 @@
 #define wakeupInterval 8
 
 // define time limits and global variables
-// set to 1 day and 60 minutes for testing
-int oneHour= (60*60)/wakeupInterval; // changed to 10 minutes for test. number of watchdog timers during 1 hour is you wake up every 8 seconds
-int oneWeek= (24*60)/wakeupInterval; // number of watchdog timers during a full week.
-int watchdog_counter =  0; //initialise watchdog counter
+// set to 1 day and 1 minute for testing
+int oneMin= (1*60)/wakeupInterval; // changed to 10 minutes for test. number of loop iteration during 1 hour if you loop every 8 seconds
+int oneWeek= (12*60)/wakeupInterval; // number of loop iteration during a full week.
+int loop_counter =  0; //initialise watchdog counter
 int lastHum = 9999;
 int lastWatering = 0;
 int lastBalloonBlink = 0;
@@ -43,7 +43,7 @@ int readWatering() {
 void detectWatering(int level) {
   // lower argument 'level' denotes a higher humidity
   if(level < 0.90*lastHum) {
-    lastWatering = watchdog_counter;
+    lastWatering = loop_counter;
     balloon('s'); // short blink
   }
   lastHum = level;
@@ -51,9 +51,9 @@ void detectWatering(int level) {
 
 void detectNoWatering() {
   // if last watering was more and a week old and last blink was more than an hour, do short blinks
-  if (watchdog_counter > lastWatering + oneWeek) {
-    if (watchdog_counter > lastBalloonBlink + oneHour){
-      lastBalloonBlink = watchdog_counter;
+  if (loop_counter > lastWatering + oneWeek) {
+    if (loop_counter > lastBalloonBlink + oneMin){
+      lastBalloonBlink = loop_counter;
       balloon('l');
     }
   }
@@ -66,20 +66,17 @@ void heartBeat() {
   setup_watchdog(2); //Setup watchdog to go off after 64ms
   sleep_mode(); //Go to sleep! Wake up 64 ms later
   digitalWrite(hearthLed, LOW);
-  watchdog_counter--;
 }
 
 void balloon(char shortLong) {
   // blink the red balloon 5/10 times. For short blink, 64ms. Long blink: 500ms.
-  for (byte i=0; i < ((shortLong == 's')?10:5); i++) {
+  for (byte i=0; i < ((shortLong == 's')?10:2); i++) {
     digitalWrite(balloonLed,HIGH);
-    setup_watchdog((shortLong == 's')?2:5); //Setup watchdog to go off after 64/500ms
+    setup_watchdog((shortLong == 's')?2:2); //Setup watchdog to go off after 64/500ms
     sleep_mode(); //Go to sleep!
-    watchdog_counter--;
     digitalWrite(balloonLed,LOW);
-    if (i!=((shortLong == 's')?9:4)) { // do not suspend after the last blink.
+    if (i!=((shortLong == 's')?9:1)) { // do not suspend after the last blink.
       sleep_mode();
-      watchdog_counter--;
     }
   }
 }
@@ -87,8 +84,6 @@ void balloon(char shortLong) {
 
 ISR(WDT_vect) {
   //This runs each time the watch dog wakes us up from sleep
-  // the value of watchdog_counter*8seconds determine the elapsed time between events.
-  watchdog_counter++;
 }
 
 void setup() {
@@ -109,6 +104,7 @@ void setup() {
 }
 
 void loop() {
+  loop_counter++;
   heartBeat();
   int level = readWatering();
   detectWatering(level);
