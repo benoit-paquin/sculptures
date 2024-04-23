@@ -16,18 +16,12 @@
 #define legPower 1
 #define legHum A1
 #define legGround 0
-#define wakeupInterval 8
-#define oneDay 86400 // number of seconds in a day
-#define oneHour 3600 // number of seconds in an hour
+#define noWaterInterval 32400 //32400 is 3 days or 32400 slices of 8 seconds (3x24x60x60)/8
 
-// define time limits and global variables
-// set to 1 day and 1 minute for testing
-int noWaterBlink= 1; //# (1*60)/wakeupInterval; // balloon will blink at every cycle if set to 1, otherwise at time interval.
-int noWaterInterval= (3*oneDay)/wakeupInterval; // number of loop iteration during 3 days.
-int loop_counter =  0; //initialise watchdog counter
-int lastHum = 9999;
-int lastWatering = 0;
-int lastBalloonBlink = 0;
+unsigned long int loop_counter =  0; //initialise watchdog counter
+unsigned long int lastHum = 9999;
+unsigned long int lastWatering = 0;
+
 
 int readWatering() {
   //read humidity level with 10 consecutive readings and average
@@ -44,20 +38,17 @@ int readWatering() {
 
 void detectWatering(int level) {
   // lower argument 'level' denotes a higher humidity
-  if(level < 0.90*lastHum) {
+  if(level < 0.95 * lastHum) {
     lastWatering = loop_counter;
     balloon('w'); // watering blink
+    lastHum = level;
   }
-  lastHum = level;
 }
 
 void detectNoWatering() {
-  // if last watering was more and a week old and last blink was more than an hour, do short blinks
-  if (loop_counter > lastWatering + noWaterInterval) {
-    if (loop_counter > lastBalloonBlink + noWaterBlink){
-      lastBalloonBlink = loop_counter;
-      balloon('n');
-    }
+  // if last watering was more noWaterInterval and last blink was more than noWaterBlink, do blink
+  if (loop_counter >= (lastWatering + noWaterInterval)) { 
+    balloon('n');
   }
 }
 
@@ -86,10 +77,14 @@ void balloon(char waterNowater) {
 
 ISR(WDT_vect) {
   //This runs each time the watch dog wakes us up from sleep
+  //wdt_disable();
 }
 
 void setup() {
   //Power down various bits of hardware to lower power usage  
+  lastWatering = 0;
+  lastHum = 9999;
+  loop_counter =  0; 
   set_sleep_mode(SLEEP_MODE_PWR_DOWN); //Power down everything, wake up from WDT
   sleep_enable();
   pinMode(balloonLed,OUTPUT);
@@ -102,17 +97,19 @@ void setup() {
   heartBeat();
   delay(50);
   heartBeat();
+  delay(50);
+  heartBeat();
   balloon('n'); 
 }
 
 void loop() {
-  loop_counter++;
   heartBeat();
   int level = readWatering();
   detectWatering(level);
   detectNoWatering();
   setup_watchdog(9); //Setup watchdog to go off after 8sec
   sleep_mode(); //Go to sleep! Wake up 8 sec later
+  loop_counter++;
 }
 
 void setup_watchdog(int timerPrescaler) {
