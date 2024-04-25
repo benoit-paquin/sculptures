@@ -7,6 +7,7 @@
 //       if the last blink is more than one hour, blink red led at long intervals and set last blink time to current watchdog_counter.
 
 
+#include <EEPROM.h>
 #include <avr/sleep.h> //Needed for sleep_mode
 #include <avr/wdt.h> //Needed to enable/disable watch dog timer
 
@@ -16,11 +17,11 @@
 #define legPower 1
 #define legHum A1
 #define legGround 0
-#define noWaterInterval 32400 //32400 is 3 days or 32400 slices of 8 seconds (3x24x60x60)/8
-
+unsigned long int noWaterInterval=32400; //32400 is 3 days or 32400 slices of 8 seconds (3x24x60x60)/8
 unsigned long int loop_counter =  0; //initialise watchdog counter
 unsigned long int lastHum = 9999;
 unsigned long int lastWatering = 0;
+byte noWaterDays[] = {1, 3, 7};  //array indexed by the eeprom to find out how many days to check before watering
 
 
 int readWatering() {
@@ -56,7 +57,7 @@ void heartBeat() {
   // blink the heart led, sleep 64 ms while the LED is lit before turning off the led.
   // as the watchdog timer will increase the watchdog_counter value, decrease it by 1 otherwise it will changes the time limits.
   digitalWrite(hearthLed, HIGH);
-  setup_watchdog(1); //Setup watchdog to go off after 32ms
+  setup_watchdog(0); //Setup watchdog to go off after 32ms
   sleep_mode(); //Go to sleep! Wake up 32 ms later
   digitalWrite(hearthLed, LOW);
 }
@@ -81,7 +82,12 @@ ISR(WDT_vect) {
 }
 
 void setup() {
-  //Power down various bits of hardware to lower power usage  
+  // Increase eeprom byte 0 by 1. Possible values are 0, 1, 2
+  byte eevalue = EEPROM.read(0);
+  eevalue++;
+  eevalue = eevalue % 3;
+  EEPROM.write(0,eevalue);
+  noWaterInterval = (noWaterDays[eevalue]*24*60*60)/8; 
   lastWatering = 0;
   lastHum = 9999;
   loop_counter =  0; 
@@ -93,13 +99,12 @@ void setup() {
   pinMode(legHum, INPUT);
   pinMode(legGround, OUTPUT);
   digitalWrite(legGround, LOW); 
-  balloon('w');
-  heartBeat();
-  delay(50);
-  heartBeat();
-  delay(50);
-  heartBeat();
-  balloon('n'); 
+  for (int i= 0; i < noWaterDays[eevalue]; i++) {
+    digitalWrite(balloonLed, HIGH);
+    delay(500);
+    digitalWrite(balloonLed, LOW);
+    delay(500);
+  }
 }
 
 void loop() {
