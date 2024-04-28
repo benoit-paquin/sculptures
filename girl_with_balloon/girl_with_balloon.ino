@@ -9,6 +9,7 @@
 
 #include <EEPROM.h>
 #include <avr/sleep.h> //Needed for sleep_mode
+#include <avr/power.h>
 #include <avr/wdt.h> //Needed to enable/disable watch dog timer
 
 // attiny85 pin setup, pin 1 is not used and grounded.
@@ -22,15 +23,17 @@ unsigned long int loop_counter =  0; //initialise watchdog counter
 unsigned long int lastHum = 9999;
 unsigned long int lastWatering = 0;
 byte noWaterDays[] = {1, 3, 7};  //array indexed by the eeprom to find out how many days to check before watering
-
+byte wateringDays = 0;
 
 int readWatering() {
   //read humidity level with 10 consecutive readings and average
   digitalWrite(legPower, HIGH);
   int readings = 0;
   for (byte i=0; i < 10; i++) {  //10 reading and average
+    int reading;
+    reading = analogRead(legHum);
     delay(10);
-    readings += analogRead(legHum);
+    readings += reading;
   }
   readings = readings /10; 
   digitalWrite(legPower, LOW);
@@ -38,12 +41,15 @@ int readWatering() {
 }
 
 void detectWatering(int level) {
+  // Detect that the plant has been watered
   // lower argument 'level' denotes a higher humidity
-  if(level < 0.95 * lastHum) {
+  if(level < 0.98 * lastHum) {
     lastWatering = loop_counter;
     balloon('w'); // watering blink
-    lastHum = level;
+    goToSleep(6); // wait 1 second
+    displayWateringDays(wateringDays); // Blink the balloon the number of days between checks
   }
+  lastHum = level;
 }
 
 void detectNoWatering() {
@@ -57,54 +63,71 @@ void heartBeat() {
   // blink the heart led, sleep 64 ms while the LED is lit before turning off the led.
   // as the watchdog timer will increase the watchdog_counter value, decrease it by 1 otherwise it will changes the time limits.
   digitalWrite(hearthLed, HIGH);
-  setup_watchdog(0); //Setup watchdog to go off after 32ms
-  sleep_mode(); //Go to sleep! Wake up 32 ms later
+  goToSleep(0); //Setup watchdog to go off after 16ms
   digitalWrite(hearthLed, LOW);
 }
 
 void balloon(char waterNowater) {
   // blink the red balloon 5/10 times. For short blink, 64ms. Long blink: 500ms.
-  for (byte i=0; i < ((waterNowater == 'w')?10:2); i++) {
+  for (byte cnt=0; cnt < ((waterNowater == 'w')?10:2); cnt++) {
     digitalWrite(balloonLed,HIGH);
-    setup_watchdog((waterNowater == '2')?2:2); //Setup watchdog to go off after 64/500ms
-    sleep_mode(); //Go to sleep!
+    goToSleep(4); //Setup watchdog to go off after 64/500ms
     digitalWrite(balloonLed,LOW);
-    if (i!=((waterNowater == 'w')?9:1)) { // do not suspend after the last blink.
-      sleep_mode();
-    }
+    goToSleep(2);   
   }
 }
 
+void goToSleep(int tim) {
+  // disable ADC, sleep, enable ADC
+  ADCSRA &= ~_BV(ADEN);       // ADC off
+  sleep_enable();
+  setup_watchdog(tim);
+  sleep_mode();
+  ADCSRA |= _BV(ADEN);        // ADC on
+}
 
 ISR(WDT_vect) {
   //This runs each time the watch dog wakes us up from sleep
-  //wdt_disable();
+  wdt_disable();
 }
 
-void setup() {
-  // Increase eeprom byte 0 by 1. Possible values are 0, 1, 2
-  byte eevalue = EEPROM.read(0);
-  eevalue++;
-  eevalue = eevalue % 3;
-  EEPROM.write(0,eevalue);
-  noWaterInterval = (noWaterDays[eevalue]*24*60*60)/8; 
-  lastWatering = 0;
-  lastHum = 9999;
-  loop_counter =  0; 
-  set_sleep_mode(SLEEP_MODE_PWR_DOWN); //Power down everything, wake up from WDT
-  sleep_enable();
-  pinMode(balloonLed,OUTPUT);
-  pinMode(hearthLed,OUTPUT);
-  pinMode(legPower, OUTPUT);
-  pinMode(legHum, INPUT);
-  pinMode(legGround, OUTPUT);
-  digitalWrite(legGround, LOW); 
-  for (int i= 0; i < noWaterDays[eevalue]; i++) {
+void displayWateringDays(byte wateringDays) {
+  // blink the balloon corresponding to the number of days to check for no watering 
+    for (int i= 0; i < wateringDays; i++) {
     digitalWrite(balloonLed, HIGH);
-    delay(500);
+    delay(500);  // Half a second
     digitalWrite(balloonLed, LOW);
     delay(500);
   }
+}
+
+void setup() {
+  // at each restart, the delay before the no water blinks, torates from 1 to 4 to 7 days. The information is stored in the EEPROM, byte 0.
+  // Increase eeprom byte 0 by 1. Possible values are 0, 1, 2
+  byte eevalue = EEPROM.read(0);  // read stored value
+  eevalue++; 
+  eevalue = eevalue % 3;
+  delay(500); // set delay in case of infinite reboot, we do not want to constantly rewrite the eeprom. 
+  EEPROM.write(0,eevalue);   // save for next time. 
+  wateringDays = noWaterDays[eevalue];
+  noWaterInterval = wateringDays*3600; // 12 hours is about 3600 loop. for debugging*10800; //10800 number of 8 seconds slices in a day
+  // Initialise some variables
+  lastWatering = 0;    // last time water was added to the plant
+  lastHum = 9999;      // last humidity reading
+  loop_counter =  0;   // timer, each increment is about 8.3 seconds
+  // prepare sleep parameters.
+  set_sleep_mode(SLEEP_MODE_PWR_DOWN); //Power down everything, wake up from WDT
+  sleep_enable();
+  // Set GPIO pins
+  pinMode(balloonLed,OUTPUT);
+  pinMode(hearthLed,OUTPUT);
+  pinMode(legPower, OUTPUT);
+  //pinMode(legHum, INPUT); This line is replaced by DDRB, below 
+  DDRB &= ~(1 << DDB2);
+  pinMode(legGround, OUTPUT);
+  digitalWrite(legGround, LOW); 
+  // Tell the user of the watering interval
+  displayWateringDays(wateringDays);
 }
 
 void loop() {
@@ -112,8 +135,7 @@ void loop() {
   int level = readWatering();
   detectWatering(level);
   detectNoWatering();
-  setup_watchdog(9); //Setup watchdog to go off after 8sec
-  sleep_mode(); //Go to sleep! Wake up 8 sec later
+  goToSleep(9); //Setup watchdog to go off after 8sec
   loop_counter++;
 }
 
