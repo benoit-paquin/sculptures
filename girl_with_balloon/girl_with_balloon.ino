@@ -15,14 +15,14 @@
 // attiny85 pin setup, pin 1 is not used and grounded.
 #define balloonLed 4
 #define hearthLed 3
-#define legPower 1
+#define legPower 0
 #define legHum A1
-#define legGround 0
+//#define legGround 0
 unsigned long int noWaterInterval=32400; //32400 is 3 days or 32400 slices of 8 seconds (3x24x60x60)/8
 unsigned long int loop_counter =  0; //initialise watchdog counter
 unsigned long int lastHum = 9999;
 unsigned long int lastWatering = 0;
-byte noWaterDays[] = {1, 3, 7};  //array indexed by the eeprom to find out how many days to check before watering
+unsigned long int noWaterDays[] = {1, 3, 7};  //array indexed by the eeprom to find out how many days to check before watering
 byte wateringDays = 0;
 
 int readWatering() {
@@ -43,9 +43,9 @@ int readWatering() {
 void detectWatering(int level) {
   // Detect that the plant has been watered
   // lower argument 'level' denotes a higher humidity
-  if(level < 0.98 * lastHum) {
+  if(level < 0.95 * lastHum) {
     lastWatering = loop_counter;
-    balloon('w'); // watering blink
+    balloon('w'); // watering blink 
     goToSleep(6); // wait 1 second
     displayWateringDays(wateringDays); // Blink the balloon the number of days between checks
   }
@@ -69,9 +69,9 @@ void heartBeat() {
 
 void balloon(char waterNowater) {
   // blink the red balloon 5/10 times. For short blink, 64ms. Long blink: 500ms.
-  for (byte cnt=0; cnt < ((waterNowater == 'w')?10:2); cnt++) {
+  for (byte cnt=0; cnt < ((waterNowater == 'w')?8:2); cnt++) {
     digitalWrite(balloonLed,HIGH);
-    goToSleep(4); //Setup watchdog to go off after 64/500ms
+    goToSleep((waterNowater == 'w')?2:5); //Setup watchdog to go off after 64/500ms
     digitalWrite(balloonLed,LOW);
     goToSleep(2);   
   }
@@ -110,7 +110,7 @@ void setup() {
   delay(500); // set delay in case of infinite reboot, we do not want to constantly rewrite the eeprom. 
   EEPROM.write(0,eevalue);   // save for next time. 
   wateringDays = noWaterDays[eevalue];
-  noWaterInterval = wateringDays*3600; // 12 hours is about 3600 loop. for debugging*10800; //10800 number of 8 seconds slices in a day
+  noWaterInterval = (long) wateringDays*10700L; // 12 hours is about 3600 loop. for debugging*10800; //10800 number of 8 seconds slices in a day
   // Initialise some variables
   lastWatering = 0;    // last time water was added to the plant
   lastHum = 9999;      // last humidity reading
@@ -124,8 +124,8 @@ void setup() {
   pinMode(legPower, OUTPUT);
   //pinMode(legHum, INPUT); This line is replaced by DDRB, below 
   DDRB &= ~(1 << DDB2);
-  pinMode(legGround, OUTPUT);
-  digitalWrite(legGround, LOW); 
+  //pinMode(legGround, OUTPUT);
+  //digitalWrite(legGround, LOW); 
   // Tell the user of the watering interval
   displayWateringDays(wateringDays);
 }
