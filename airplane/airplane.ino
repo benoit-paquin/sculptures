@@ -32,33 +32,31 @@ void flashLeds() {
   digitalWrite(leftLed, HIGH);
   goToSleep(0); //Setup watchdog to go off after 16ms
   digitalWrite(leftLed, LOW);
-  goToSleep(0);
+  goToSleep(3);
   digitalWrite(rightLed, HIGH);
   goToSleep(0); //Setup watchdog to go off after 16ms
   digitalWrite(rightLed, LOW);
-  goToSleep(0);
+  goToSleep(3);
   digitalWrite(tailLed, HIGH);
-  goToSleep(1); //Setup watchdog to go off after 16ms
+  goToSleep(0); //Setup watchdog to go off after 16ms
   digitalWrite(tailLed, LOW);
-  goToSleep(0);
+  goToSleep(5);
   digitalWrite(tailLed, HIGH);
-  goToSleep(1); //Setup watchdog to go off after 16ms
+  goToSleep(0); //Setup watchdog to go off after 16ms
   digitalWrite(tailLed, LOW);
-  goToSleep(0);
+  goToSleep(5);
   digitalWrite(balanceLed, HIGH);
-  goToSleep(4); //Setup watchdog to go off after 16ms
+  goToSleep(2); //Setup watchdog to go off after 16ms
   digitalWrite(balanceLed, LOW);
-  goToSleep(0);
-  digitalWrite(motorPin, HIGH);
-  goToSleep(3 ); //Setup watchdog to go off after 16ms
-  digitalWrite(motorPin, LOW);
 }
 
-void motor() {
+void motorOn() {
+  for (int i = 0; i<10; i++) {
     digitalWrite(motorPin, HIGH);
-    delay(500);
+    goToSleep(0);
     digitalWrite(motorPin, LOW);
-    delay(300);
+    goToSleep(2);
+  }
 }
 
 ISR(WDT_vect) {
@@ -81,15 +79,15 @@ void setup() {
   pinMode(tailLed, OUTPUT);
   pinMode(balanceLed, OUTPUT);
   flashLeds();
-  //motor();
+  motorOn();
 }
 
 void loop() {
   if (loop_counter%4 == 0){
     lastVcc = readVcc();
   }
-  if (loop_counter%5 == 0 && lastVcc > 2400) {
-    //motor();
+  if (loop_counter%3 == 0 && lastVcc > 2400) {
+    motorOn();
   }
   loop_counter++;
   if (lastVcc > 2400) {
