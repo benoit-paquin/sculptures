@@ -22,7 +22,7 @@ unsigned long int noWaterInterval=32400; //32400 is 3 days or 32400 slices of 8 
 unsigned long int loop_counter =  0; //initialise watchdog counter
 unsigned long int lastHum = 9999;
 unsigned long int lastWatering = 0;
-unsigned long int noWaterDays[] = {1, 3, 7};  //array indexed by the eeprom to find out how many days to check before watering
+unsigned long int noWaterDays[] = {1, 1, 1};  //array indexed by the eeprom to find out how many days to check before watering
 byte wateringDays = 0;
 
 int readWatering() {
@@ -43,7 +43,7 @@ int readWatering() {
 void detectWatering(int level) {
   // Detect that the plant has been watered
   // lower argument 'level' denotes a higher humidity
-  if(level < 0.95 * lastHum) {
+  if(level < 0.90 * lastHum) {
     lastWatering = loop_counter;
     balloon('w'); // watering blink 
     goToSleep(6); // wait 1 second
