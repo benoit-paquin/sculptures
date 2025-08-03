@@ -8,17 +8,7 @@
 
 // attiny85 pin setup, 
 #define motorPin  1
-#define greenLed  4 // green
-#define redLed  2 // red
-#define tailLed 3 // tail led
-#define balanceLed  0
-
-
-unsigned long int loop_counter =  0; //initialise watchdog counter
-unsigned long int last_motor_run = 0; // last time the motor ran
-long lastVcc = 0; // last voltage read
-bool powerOn = true;
-bool motorOn = true;
+#define ledPin 0
 
 void goToSleep(int tim) {
   // disable ADC, sleep, enable ADC
@@ -29,57 +19,16 @@ void goToSleep(int tim) {
   ADCSRA |= _BV(ADEN);        // ADC on
 }
 
-void flashALed(byte led, byte duration, byte count) {
-  for (int i = 0; i< count; i++) {
-    digitalWrite(led,HIGH);
-    goToSleep(duration);
-    digitalWrite(led, LOW);
-    goToSleep(3);
-  }
-}
-
-void checkState() {
-  pinMode(A1, INPUT); //red 
-  pinMode(A2, INPUT); //green
-  int red   = analogRead(A1);
-  delay(10);
-  int green = analogRead(A2);
-  delay(10);
-  red   = analogRead(A1);
-  delay(10);
-  green = analogRead(A2);
-  delay(10);
-  if ((red <= 5) && (green >5)) {
-    powerOn != powerOn;
-    flashALed(tailLed,3,4);
-  }
-  if ((green <= 5) && (red >5)) {
-    motorOn != motorOn;
-    flashALed(tailLed,3,4);
-  }
-  pinMode(A1, OUTPUT); //red 
-  pinMode(A2, OUTPUT); //green
-}
-
-
-void flashLeds() {
-  // blink the heart led, sleep 64 ms while the LED is lit before turning off the led.
-  // as the watchdog timer will increase the watchdog_counter value, decrease it by 1 otherwise it will changes the time limits.
-  flashALed(redLed,0,1);
-  flashALed(greenLed,0,1);
-  flashALed(tailLed,2,2);
-  flashALed(balanceLed,2,2);
-}
 
 void propeller() {
-  if (true) {
-  for (int i = 0; i<100; i++) {
+  for (int i = 0; i<3; i++) {
       digitalWrite(motorPin, HIGH);
-      goToSleep(3);                                                    
+      digitalWrite(ledPin, HIGH);
+      goToSleep(9);                                                    
       digitalWrite(motorPin, LOW);
-      goToSleep(3);
+      digitalWrite(ledPin, LOW);
+      goToSleep(0);
     }
-  }
 }
 
 ISR(WDT_vect) {
@@ -88,45 +37,20 @@ ISR(WDT_vect) {
 }
 
 void setup() {
-  // Initialise some variables
-  loop_counter =  0;   // timer, each increment is about 8.3 seconds
-  last_motor_run = 0;
-  lastVcc = 0;
-  // prepare sleep parameters.
   set_sleep_mode(SLEEP_MODE_PWR_DOWN); //Power down everything, wake up from WDT
   sleep_enable();
   // Set GPIO pins
   pinMode(motorPin,OUTPUT);
-  pinMode(greenLed,OUTPUT);
-  pinMode(redLed, OUTPUT);
-  pinMode(tailLed, OUTPUT);
-  pinMode(balanceLed, OUTPUT);
-  flashLeds();
+  pinMode(ledPin, OUTPUT);
   propeller();
-  digitalWrite(motorPin,HIGH);
-  delay(2000);
-  digitalWrite(motorPin,LOW);
-  delay(100000);
 }
 
 void loop() {
-  checkState();
-  if (powerOn) {
-    if (loop_counter%4 == 0){
-      lastVcc = readVcc();
-    }
-    if (loop_counter%4 == 0 && lastVcc > 2600) {
-        propeller();
-    }
-    loop_counter++;
-    if (lastVcc > 2200) {
-      flashLeds();
-    }
-    if (lastVcc < 2200) { // not enough voltage. do nothing
-      goToSleep(9);
-    }
-  }
-  goToSleep(7);
+  propeller();
+  if (readVcc > 3200) {
+    goToSleep(3);
+  } else
+  goToSleep(9);
 }
 
 void setup_watchdog(int timerPrescaler) {

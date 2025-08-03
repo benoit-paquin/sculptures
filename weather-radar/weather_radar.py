@@ -33,8 +33,8 @@ import numpy as np
 
 # Adafruit & CircuitPython libraries
 import board
-import digitalio
-import adafruit_rgb_display.ili9341 as ili9341
+#import digitalio
+#import adafruit_rgb_display.ili9341 as ili9341
 
 # Secrets! (openweather API & lat long coordinates)
 from secrets import secrets
