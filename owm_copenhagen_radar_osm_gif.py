@@ -16,7 +16,7 @@ import numpy as np
 # ---------------------------
 OWM_API_KEY = "90ea5ee12e5dbecbe533b846bb5f8d10" #os.getenv("OWM_API_KEY") or "YOUR_API_KEY_HERE"
 ZOOM = 9                 # 6–12 works; higher = more detailed
-TILE_SIZE = 256
+TILE_SIZE = 128 #256
 LAYER = "precipitation"
 OUT_GIF = "copenhagen_radar_osm.gif"
 DURATION = 0.7           # seconds per frame
