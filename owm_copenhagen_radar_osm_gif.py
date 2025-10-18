@@ -41,8 +41,9 @@ def latlon_to_tile(lat_deg, lon_deg, zoom):
 
 # --- Tile downloaders -------------------------------------------------
 def get_tile_osm(x, y, z, timeout=10):
+    headers = {"User-Agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.97 Safari/537.36"}
     url = f"https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-    r = requests.get(url, timeout=timeout)
+    r = requests.get(url, headers=headers, timeout=timeout)
     if r.status_code == 200:
         return Image.open(io.BytesIO(r.content)).convert("RGBA")
     return Image.new("RGBA", (TILE_SIZE, TILE_SIZE), (255,255,255,255))
