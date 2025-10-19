@@ -20,12 +20,12 @@ TILE_SIZE = 256
 LAYER = "precipitation"
 OUT_GIF = "copenhagen_radar_osm.gif"
 DURATION = 0.7           # seconds per frame
-TILE_RADIUS = 0          # 1 → 3x3 tile block; increase for larger map
+TILE_RADIUS = 1          # 1 → 3x3 tile block; increase for larger map
 
 # Copenhagen center
-#LAT, LON = 55.6761, 12.5683
+LAT, LON = 55.6761, 12.5683
 # Sudbury
-LAT, LON = 46.5, -81
+#LAT, LON = 46.5, -81
 # Time steps (use simple "current" mode)
 FRAME_COUNT = 6
 FRAME_INTERVAL_MIN = 10  # pretend 10-min steps (repeats current)
