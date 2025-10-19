@@ -16,11 +16,11 @@ import numpy as np
 # ---------------------------
 OWM_API_KEY = "90ea5ee12e5dbecbe533b846bb5f8d10" #os.getenv("OWM_API_KEY") or "YOUR_API_KEY_HERE"
 ZOOM = 9                 # 6–12 works; higher = more detailed
-TILE_SIZE = 128 #256
+TILE_SIZE = 256
 LAYER = "precipitation"
 OUT_GIF = "copenhagen_radar_osm.gif"
 DURATION = 0.7           # seconds per frame
-TILE_RADIUS = 1          # 1 → 3x3 tile block; increase for larger map
+TILE_RADIUS = 0          # 1 → 3x3 tile block; increase for larger map
 
 # Copenhagen center
 #LAT, LON = 55.6761, 12.5683
