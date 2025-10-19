@@ -1,0 +1,6 @@
+{
+    "name": "Stamen Toner Lite",
+    "attribution": "© Stamen Design, © Stadia Maps, © OpenMapTiles, © OpenStreetMap",
+    "url": "https://tiles.stadiamaps.com/tiles/stamen_toner_lite/{z}/{x}/{y}.{ext}?api_key={api_key}",
+    "api-key-ref": "stadiamaps"
+}

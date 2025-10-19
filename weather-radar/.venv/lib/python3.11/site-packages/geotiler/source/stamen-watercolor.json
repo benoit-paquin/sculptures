@@ -1,0 +1,7 @@
+{
+    "name": "Stamen Watercolor",
+    "attribution": "© Stamen Design, © Stadia Maps, © OpenMapTiles, © OpenStreetMap",
+    "url": "https://tiles.stadiamaps.com/tiles/stamen_watercolor/{z}/{x}/{y}.{ext}?api_key={api_key}",
+    "api-key-ref": "stadiamaps",
+    "extension": "jpg"
+}
