@@ -19,14 +19,18 @@ ZOOM = 6                 # 6–12 works; higher = more detailed
 TILE_SIZE = 256
 LAYER = "precipitation"
 OUT_GIF = "copenhagen_radar_osm.gif"
-DURATION = 0.7           # seconds per frame
-TILE_RADIUS = 0          # 1 → 3x3 tile block; increase for larger map
+DURATION = 1#0.7           # seconds per frame
+TILE_RADIUS = 1          # 1 → 3x3 tile block; increase for larger map
 
 # Copenhagen center
-LAT, LON = 55.6761, 12.5683
+#LAT, LON = 55.6761, 12.5683
 # Sudbury
 #LAT, LON = 46.5, -81
 # Time steps (use simple "current" mode)
+# Toronto
+LAT, LON = 43.65, -79.38
+
+
 FRAME_COUNT = 6
 FRAME_INTERVAL_MIN = 10  # pretend 10-min steps (repeats current)
 # ---------------------------
@@ -89,7 +93,7 @@ def main():
         # NOTE: The OWM tile endpoint always shows *current* precipitation.
         # This loop just repeats it to create a short animated GIF.
         overlay = stitch_tiles(xmin, xmax, ymin, ymax,
-                               lambda x, y: get_tile_owm_precip(x, y, ZOOM, LAYER, OWM_API_KEY))
+                               lambda x, y: get_tile_owm_precip(x+i, y+i, ZOOM, LAYER, OWM_API_KEY))
         frame = Image.alpha_composite(base, overlay)
         frames.append(np.array(frame))
         time.sleep(0.2)  # be polite to servers
