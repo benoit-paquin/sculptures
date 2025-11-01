@@ -14,14 +14,14 @@
 
 const char* WIFI_SSID     = "BELL082";
 const char* WIFI_PASSWORD = "6DF1F5D5AA45";
-const char* OWM_API_KEY   = "YOUR_OPENWEATHERMAP_API_KEY";
+const char* OWM_API_KEY   = "90ea5ee12e5dbecbe533b846bb5f8d10";
 
 const double LAT = 55.6761;
 const double LON = 12.5683;
 const int    ZOOM = 13;
 
 const unsigned long FRAME_DELAY_MS = 20000;
-const unsigned long REFRESH_INTERVAL_MS = 3600000; // 1 hour
+const unsigned long REFRESH_INTERVAL_MS = 360000; // 6 minutes
 const uint64_t SLEEP_INTERVAL_US = REFRESH_INTERVAL_MS * 1000ULL;
 
 const char* OSM_FILE   = "/osm.png";
