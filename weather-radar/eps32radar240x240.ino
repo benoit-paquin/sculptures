@@ -74,20 +74,21 @@ bool downloadToSPIFFS(const String &url, const char *destPath) {
 }
 
 // --- PNG decode to RGBA ---
-bool decodePNGToRGBA(const char* path, uint8_t* outBuf) {
+bool decodePNGToRGBA(const String &path, uint8_t *outBuf, int width, int height) {
+  PNG png;
   struct Local {
     static void draw(PNGDRAW *pDraw) {
-      uint8_t* dest = (uint8_t*)pDraw->pUser;
-      uint8_t* src  = (uint8_t*)pDraw->pPixels;
-      memcpy(dest + pDraw->y * pDraw->iWidth * 4, src, pDraw->iWidth * 4);
+      uint8_t *out = (uint8_t *)pDraw->pUser + (pDraw->y * pDraw->iWidth * 4);
+      png.getLineAsRGBA(pDraw, out, 0xFF);
     }
   };
-  if (png.open(path, Local::draw, outBuf)) {
-    int rc = png.decode(NULL, 0);
-    png.close();
-    return rc == PNG_SUCCESS;
-  }
-  return false;
+
+  int rc = png.open(path.c_str(), Local::draw, outBuf, 1, false, false);
+  if (rc != PNG_SUCCESS) return false;
+
+  int rc2 = png.decode(nullptr, 0);
+  png.close();
+  return rc2 == PNG_SUCCESS;
 }
 
 // --- Alpha blend + save RGB565 ---
