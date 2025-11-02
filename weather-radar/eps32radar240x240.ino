@@ -12,6 +12,9 @@
 #include <PNGdec.h>
 #include <time.h>
 
+#define WIDTH  240
+#define HEIGHT 240
+
 #define TFT_WIDTH  240
 #define TFT_HEIGHT 240
 
@@ -27,12 +30,10 @@
 #define LOAD_GFXFF
 #define SMOOTH_FONT
 
-
-#define WIDTH  240
-#define HEIGHT 240
 const char* WIFI_SSID     = "BELL082";
 const char* WIFI_PASSWORD = "6DF1F5D5AA45";
 const char* OWM_API_KEY   = "90ea5ee12e5dbecbe533b846bb5f8d10";
+
 const double LAT  = 55.6761;
 const double LON  = 12.5683;
 const int    ZOOM = 13;
@@ -74,21 +75,20 @@ bool downloadToSPIFFS(const String &url, const char *destPath) {
 }
 
 // --- PNG decode to RGBA ---
-bool decodePNGToRGBA(const String &path, uint8_t *outBuf, int width, int height) {
-  PNG png;
+bool decodePNGToRGBA(const char* path, uint8_t* outBuf) {
   struct Local {
     static void draw(PNGDRAW *pDraw) {
-      uint8_t *out = (uint8_t *)pDraw->pUser + (pDraw->y * pDraw->iWidth * 4);
-      png.getLineAsRGBA(pDraw, out, 0xFF);
+      uint8_t* dest = (uint8_t*)pDraw->pUser;
+      uint8_t* src  = (uint8_t*)pDraw->pPixels;
+      memcpy(dest + pDraw->y * pDraw->iWidth * 4, src, pDraw->iWidth * 4);
     }
   };
-
-  int rc = png.open(path.c_str(), Local::draw, outBuf, 1, false, false);
-  if (rc != PNG_SUCCESS) return false;
-
-  int rc2 = png.decode(nullptr, 0);
-  png.close();
-  return rc2 == PNG_SUCCESS;
+  if (png.open(path, Local::draw, outBuf)) {
+    int rc = png.decode(NULL, 0);
+    png.close();
+    return rc == PNG_SUCCESS;
+  }
+  return false;
 }
 
 // --- Alpha blend + save RGB565 ---
