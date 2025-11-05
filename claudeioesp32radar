@@ -1,0 +1,278 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <TFT_eSPI.h>
+#include <PNGdec.h>
+#include <time.h>
+
+// WiFi credentials
+const char* ssid = "BELL082";
+const char* password = "6DF1F5D5AA45";
+
+// OpenWeatherMap API
+const char* owm_api_key = "90ea5ee12e5dbecbe533b846bb5f8d10";
+
+// Copenhagen coordinates
+const float lat = 55.6761;
+const float lon = 12.5683;
+const int zoom = 10;
+
+// Display
+TFT_eSPI tft = TFT_eSPI();
+PNG png;
+
+// Time tracking
+const long gmtOffset_sec = 3600; // UTC+1 for Copenhagen
+const int daylightOffset_sec = 3600;
+
+// Buffer for PNG data
+uint8_t* pngBuffer = nullptr;
+size_t pngBufferSize = 0;
+
+void setup() {
+  Serial.begin(115200);
+  
+  // Initialize display
+  tft.init();
+  tft.setRotation(0);
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(2);
+  
+  // Connect to WiFi
+  tft.setCursor(10, 100);
+  tft.println("Connecting WiFi...");
+  WiFi.begin(ssid, password);
+  
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  
+  Serial.println("\nWiFi connected");
+  tft.fillScreen(TFT_BLACK);
+  tft.setCursor(10, 100);
+  tft.println("WiFi Connected!");
+  
+  // Configure time
+  configTime(gmtOffset_sec, daylightOffset_sec, "pool.ntp.org");
+  
+  delay(2000);
+}
+
+void loop() {
+  time_t now;
+  time(&now);
+  
+  // Display current radar
+  displayRadar(now, "NOW");
+  delay(20000);
+  
+  // Display 10 minutes ago
+  displayRadar(now - 600, "10 min ago");
+  delay(20000);
+  
+  // Display 20 minutes ago
+  displayRadar(now - 1200, "20 min ago");
+  delay(20000);
+}
+
+void displayRadar(time_t timestamp, const char* label) {
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextSize(1);
+  tft.setCursor(5, 5);
+  tft.println(label);
+  
+  // First, display the base map
+  if (downloadAndDisplayMap()) {
+    Serial.println("Base map displayed");
+    delay(500);
+    
+    // Then overlay the radar
+    if (downloadAndDisplayRadar(timestamp)) {
+      Serial.println("Radar overlay displayed");
+    } else {
+      Serial.println("Failed to display radar");
+    }
+  } else {
+    Serial.println("Failed to display base map");
+  }
+}
+
+bool downloadAndDisplayMap() {
+  // OpenStreetMap tile server
+  // Calculate tile coordinates for Copenhagen
+  int tileX = long2tilex(lon, zoom);
+  int tileY = lat2tiley(lat, zoom);
+  
+  String mapUrl = "https://tile.openstreetmap.org/" + String(zoom) + "/" + 
+                  String(tileX) + "/" + String(tileY) + ".png";
+  
+  Serial.println("Downloading map: " + mapUrl);
+  
+  if (downloadPNG(mapUrl.c_str())) {
+    return displayPNG(20);
+  }
+  return false;
+}
+
+bool downloadAndDisplayRadar(time_t timestamp) {
+  // OpenWeatherMap Precipitation layer
+  // Calculate tile for the same coordinates
+  int tileX = long2tilex(lon, zoom);
+  int tileY = lat2tiley(lat, zoom);
+  
+  String radarUrl = "https://tile.openweathermap.org/map/precipitation_new/" + 
+                    String(zoom) + "/" + String(tileX) + "/" + String(tileY) + 
+                    ".png?appid=" + String(owm_api_key);
+  
+  Serial.println("Downloading radar: " + radarUrl);
+  
+  if (downloadPNG(radarUrl.c_str())) {
+    return displayPNG(20, true); // true = blend mode for overlay
+  }
+  return false;
+}
+
+bool downloadPNG(const char* url) {
+  HTTPClient http;
+  
+  // Free previous buffer
+  if (pngBuffer) {
+    free(pngBuffer);
+    pngBuffer = nullptr;
+  }
+  
+  http.begin(url);
+  http.addHeader("User-Agent", "ESP32");
+  
+  int httpCode = http.GET();
+  
+  if (httpCode == HTTP_CODE_OK) {
+    int len = http.getSize();
+    
+    if (len > 0) {
+      pngBuffer = (uint8_t*)malloc(len);
+      if (pngBuffer) {
+        WiFiClient* stream = http.getStreamPtr();
+        size_t bytesRead = 0;
+        
+        while (http.connected() && bytesRead < len) {
+          size_t available = stream->available();
+          if (available) {
+            int c = stream->readBytes(pngBuffer + bytesRead, available);
+            bytesRead += c;
+          }
+          delay(1);
+        }
+        
+        pngBufferSize = bytesRead;
+        http.end();
+        return true;
+      }
+    }
+  }
+  
+  Serial.printf("HTTP Error: %d\n", httpCode);
+  http.end();
+  return false;
+}
+
+bool displayPNG(int offsetY, bool blend = false) {
+  if (!pngBuffer || pngBufferSize == 0) {
+    return false;
+  }
+  
+  int rc = png.openRAM(pngBuffer, pngBufferSize, pngDraw);
+  
+  if (rc == PNG_SUCCESS) {
+    Serial.printf("PNG: %dx%d, bpp: %d\n", png.getWidth(), png.getHeight(), png.getBpp());
+    
+    // Center the image if it's not 240x240
+    int xOffset = (240 - png.getWidth()) / 2;
+    if (xOffset < 0) xOffset = 0;
+    
+    tft.startWrite();
+    rc = png.decode(NULL, 0);
+    tft.endWrite();
+    
+    png.close();
+    return (rc == PNG_SUCCESS);
+  }
+  
+  return false;
+}
+
+// PNG decode callback
+void pngDraw(PNGDRAW *pDraw) {
+  uint16_t lineBuffer[240];
+  
+  for (int x = 0; x < pDraw->iWidth; x++) {
+    uint8_t r, g, b, a;
+    
+    if (pDraw->iBpp == 24) {
+      // RGB
+      r = pDraw->pPixels[x * 3];
+      g = pDraw->pPixels[x * 3 + 1];
+      b = pDraw->pPixels[x * 3 + 2];
+      a = 255;
+    } else if (pDraw->iBpp == 32) {
+      // RGBA
+      r = pDraw->pPixels[x * 4];
+      g = pDraw->pPixels[x * 4 + 1];
+      b = pDraw->pPixels[x * 4 + 2];
+      a = pDraw->pPixels[x * 4 + 3];
+    } else {
+      // Grayscale
+      r = g = b = pDraw->pPixels[x];
+      a = 255;
+    }
+    
+    // Skip transparent pixels for overlay
+    if (a < 128) {
+      continue;
+    }
+    
+    lineBuffer[x] = tft.color565(r, g, b);
+  }
+  
+  tft.pushImage(0, pDraw->y + 20, pDraw->iWidth, 1, lineBuffer);
+}
+
+// Tile calculation functions
+int long2tilex(float lon, int z) {
+  return (int)(floor((lon + 180.0) / 360.0 * (1 << z)));
+}
+
+int lat2tiley(float lat, int z) {
+  float latrad = lat * PI / 180.0;
+  return (int)(floor((1.0 - asinh(tan(latrad)) / PI) / 2.0 * (1 << z)));
+}
+
+// platformio.ini configuration:
+/*
+[env:esp32-c3-devkitm-1]
+platform = espressif32
+board = esp32-c3-devkitm-1
+framework = arduino
+lib_deps = 
+    bodmer/TFT_eSPI@^2.5.43
+    bitbank2/PNGdec@^1.0.1
+build_flags = 
+    -DUSER_SETUP_LOADED=1
+    -DST7789_DRIVER=1
+    -DTFT_WIDTH=240
+    -DTFT_HEIGHT=240
+    -DTFT_MOSI=7
+    -DTFT_SCLK=6
+    -DTFT_CS=10
+    -DTFT_DC=2
+    -DTFT_RST=3
+    -DLOAD_GLCD=1
+    -DLOAD_FONT2=1
+    -DLOAD_FONT4=1
+    -DLOAD_FONT6=1
+    -DLOAD_FONT7=1
+    -DLOAD_FONT8=1
+    -DLOAD_GFXFF=1
+    -DSPI_FREQUENCY=40000000
+*/
