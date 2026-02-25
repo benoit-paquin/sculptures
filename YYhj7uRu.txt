@@ -1,0 +1,426 @@
+// Include the ESP32 HUB75 Matrix Panel library and math library for trigonometric functions.
+#include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
+#include <math.h>
+
+// ===== Panel Configuration =====
+// Define the resolution of each panel and the overall matrix dimensions.
+const int panelResX = 64;                // Horizontal resolution of one panel.
+const int panelResY = 64;                // Vertical resolution of one panel.
+const int panel_chain = 2;               // Number of panels chained together horizontally.
+const int WIDTH  = panelResX * panel_chain;  // Total width: 64 * 2 = 128 pixels.
+const int HEIGHT = panelResY;                // Total height: 64 pixels.
+const int CENTER_X = WIDTH / 2;          // Center X coordinate of the display.
+const int CENTER_Y = HEIGHT / 2;         // Center Y coordinate of the display.
+
+// Global pointer to the matrix object used for drawing.
+MatrixPanel_I2S_DMA *matrix = nullptr;
+
+// ===== Two Swirls (Galaxies) =====
+// Define parameters for the swirling galaxies animation.
+#define NUM_STARS  100       // Number of stars (points) per swirl.
+#define NUM_ARMS   3         // Number of spiral arms in each swirl.
+#define MAX_RADIUS 40.0f     // Maximum radius for star positions from the swirl center.
+#define THICKNESS  6.0f      // Thickness (depth variance) of the swirl.
+
+// Structure representing a single star in a swirl.
+struct SwirlStar {
+  float baseX, baseY, baseZ;  // The 3D position of the star in the swirl's local space.
+  uint8_t baseHue;           // Base hue value for the star's color.
+};
+
+// Declare two arrays of swirl stars, one for each galaxy effect.
+SwirlStar swirlA[NUM_STARS];
+SwirlStar swirlB[NUM_STARS];
+
+// Define initial positions for the centers of the two swirls.
+float swirlACenterX_init = -30.0f;
+float swirlACenterY_init = 0.0f;
+float swirlBCenterX_init = +30.0f;
+float swirlBCenterY_init = 0.0f;
+
+// Variables to hold the current positions of the swirl centers (they will orbit).
+float swirlACenterX, swirlACenterY;
+float swirlBCenterX, swirlBCenterY;
+
+// Variables for rotation angles for each swirl around the X, Y, and Z axes.
+float rotAx = 0.0f, rotAy = 0.0f, rotAz = 0.0f;
+float rotBx = 0.0f, rotBy = 0.0f, rotBz = 0.0f;
+
+// Define rotational speeds for each axis for both swirls.
+float speedAx = 0.01f, speedAy = 0.015f, speedAz = 0.008f;
+float speedBx = 0.012f, speedBy = 0.013f, speedBz = 0.01f;
+
+// ===== Warp Effect =====
+// Maximum angle for the warp tilt effect and its periodicity.
+const float WARP_MAX_ANGLE = M_PI / 9;   // Maximum tilt in radians.
+const uint32_t WARP_PERIOD_MS = 10000;     // Time period (in ms) for one warp cycle.
+
+// ===== Color Cycle =====
+// Duration for a complete hue cycle (for color animation).
+const uint32_t COLOR_CYCLE_MS = 8000;
+
+// ===== Fade Factor for Trails =====
+// This factor is used to gradually fade the pixels for trailing effects.
+const uint8_t FADE_FACTOR = 230;
+
+// ===== Swirl Orbit Variables =====
+// Variables to control the orbital motion of the swirl centers around each other.
+float swirlOrbitRadius = 20.0f;   // Orbit radius.
+float swirlOrbitAngle = 0.0f;     // Current angle in the orbit.
+float swirlOrbitSpeed = 0.003f;   // Speed of orbital motion.
+
+// ---------- HSV to RGB Utility ----------
+// This function converts a color from HSV (Hue, Saturation, Value) to RGB format.
+// The parameters h, s, v represent the input hue, saturation, and brightness.
+// The output parameters r, g, b are set to the corresponding red, green, and blue values.
+void hsvToRgb(uint8_t h, uint8_t s, uint8_t v,
+              uint8_t &r, uint8_t &g, uint8_t &b) {
+  uint8_t region = h / 43;  // There are 6 regions in the hue circle (256/6 ≈ 43).
+  uint8_t remainder = (h - region * 43) * 6;  // Position within the region.
+  // Compute intermediary values for conversion.
+  uint8_t p = (v * (255 - s)) / 255;
+  uint8_t q = (v * (255 - ((s * remainder) / 255))) / 255;
+  uint8_t t = (v * (255 - ((s * (255 - remainder)) / 255))) / 255;
+  // Choose the correct RGB combination based on the hue region.
+  switch (region) {
+    case 0: r = v; g = t; b = p; break;
+    case 1: r = q; g = v; b = p; break;
+    case 2: r = p; g = v; b = t; break;
+    case 3: r = p; g = q; b = v; break;
+    case 4: r = t; g = p; b = v; break;
+    default: r = v; g = p; b = q; break;
+  }
+}
+
+// ========== Fade Buffer ==========
+// A 3D array that holds the current color values for each pixel on the panel.
+// The dimensions are [HEIGHT][WIDTH][3] representing Y coordinate, X coordinate, and RGB channels.
+static uint8_t frameBuf[HEIGHT][WIDTH][3];
+
+// ========== Explosion State ==========
+// Variables used to manage the explosion animation when the two swirls collide.
+bool inExplosion = false;       // Flag indicating if an explosion is active.
+uint32_t explosionStartTime = 0; // Timestamp (ms) when the explosion started.
+const uint32_t EXPLOSION_DURATION = 2000; // Duration of the explosion effect in milliseconds.
+float collisionX = 0, collisionY = 0;     // Coordinates of the collision (explosion center).
+
+// ========== Spiral Generation ==========
+// This function generates a spiral pattern of stars for a given swirl.
+// It randomly distributes stars along several spiral arms, with some noise added.
+void generateSpiral(SwirlStar *swirl) {
+  for (int i = 0; i < NUM_STARS; i++) {
+    // Randomly choose an arm for the star.
+    int arm = random(NUM_ARMS);
+    // Generate a radius with a square root to achieve a non-linear distribution.
+    float r = sqrtf((float)random(0, 10001) / 10000.0f) * MAX_RADIUS;
+    // Calculate the base angle for the chosen arm.
+    float baseArmAngle = ((float)arm / NUM_ARMS) * 2.0f * M_PI;
+    // Add a twist factor proportional to the radius.
+    float twist = r * 0.8f;
+    // Add some noise for natural variation.
+    float noise = (((float)random(-100, 101)) / 1000.0f) * M_PI;
+    // Final angle position for the star.
+    float angle = baseArmAngle + twist + noise;
+    // Convert polar coordinates to Cartesian.
+    float x = r * cosf(angle);
+    float y = r * sinf(angle);
+    // Add a slight variation in the Z-axis to give a 3D effect.
+    float z = (((float)random(-100, 101)) / 100.0f) * (THICKNESS / 2.0f);
+    // Store the calculated base positions and a random hue.
+    swirl[i].baseX = x;
+    swirl[i].baseY = y;
+    swirl[i].baseZ = z;
+    swirl[i].baseHue = (uint8_t)random(0, 256);
+  }
+}
+
+// ===== Setup Function =====
+// This function initializes the hardware panel, clears buffers, and generates the initial swirls.
+void setup() {
+  // Configure the panel using the HUB75 I2S configuration structure.
+  HUB75_I2S_CFG mxconfig(panelResX, panelResY, panel_chain);
+  mxconfig.double_buff = true;   // Enable double buffering for smoother updates.
+  mxconfig.gpio.e = 18;          // Set the GPIO pin for the enable signal.
+  mxconfig.clkphase = false;     // Clock phase configuration.
+  
+  // Instantiate and initialize the matrix panel.
+  matrix = new MatrixPanel_I2S_DMA(mxconfig);
+  matrix->begin();
+  matrix->setBrightness8(200);  // Set the brightness level.
+  matrix->fillScreen(matrix->color565(0, 0, 0));  // Clear the screen to black.
+
+  // Clear the fade buffer (initialize every pixel to black).
+  for (int y = 0; y < HEIGHT; y++) {
+    for (int x = 0; x < WIDTH; x++) {
+      frameBuf[y][x][0] = 0;
+      frameBuf[y][x][1] = 0;
+      frameBuf[y][x][2] = 0;
+    }
+  }
+
+  // Seed the random number generator with the current time (in ms).
+  randomSeed(millis());
+  // Generate the initial spiral patterns for both swirls.
+  generateSpiral(swirlA);
+  generateSpiral(swirlB);
+
+  // Set the initial positions for the swirl centers.
+  swirlACenterX = swirlACenterX_init;
+  swirlACenterY = swirlACenterY_init;
+  swirlBCenterX = swirlBCenterX_init;
+  swirlBCenterY = swirlBCenterY_init;
+}
+
+// ===== Draw Swirl Function =====
+// This function draws a swirl (galaxy) onto the panel.
+// It applies rotations, perspective, and color adjustments for each star.
+void drawSwirl(SwirlStar *swirl, float centerX, float centerY,
+               float rotX, float rotY, float rotZ,
+               float tiltAngle, uint8_t hueOffset)
+{
+  // Process each star in the swirl.
+  for (int i = 0; i < NUM_STARS; i++) {
+    // Get the star's base position.
+    float x = swirl[i].baseX;
+    float y = swirl[i].baseY;
+    float z = swirl[i].baseZ;
+
+    // ---- 3D Rotations ----
+    // Rotate around the X-axis.
+    float y1 = y * cosf(rotX) - z * sinf(rotX);
+    float z1 = y * sinf(rotX) + z * cosf(rotX);
+    // Rotate around the Y-axis.
+    float x2 = x * cosf(rotY) + z1 * sinf(rotY);
+    float z2 = -x * sinf(rotY) + z1 * cosf(rotY);
+    // Rotate around the Z-axis.
+    float x3 = x2 * cosf(rotZ) - y1 * sinf(rotZ);
+    float y3 = x2 * sinf(rotZ) + y1 * cosf(rotZ);
+    float z3 = z2;
+
+    // ---- Warp (Tilt) Effect ----
+    // Apply an additional tilt effect to simulate a warp.
+    float yw = y3 * cosf(tiltAngle) - z3 * sinf(tiltAngle);
+    float zw = y3 * sinf(tiltAngle) + z3 * cosf(tiltAngle);
+
+    // ---- Translation and Perspective ----
+    // Translate the star's position by adding the swirl's center coordinates.
+    float finalX = x3 + centerX;
+    float finalY = yw + centerY;
+    float finalZ = zw;
+    
+    // Apply a simple perspective projection:
+    // "cameraDist" simulates the distance from the viewer to the screen.
+    float cameraDist = 100.0f;
+    float depth = cameraDist - finalZ;
+    if (depth < 1.0f) continue; // Skip if the star is too close.
+    float scale = cameraDist / depth;
+    float projX = finalX * scale;
+    float projY = finalY * scale;
+
+    // Convert the projected coordinates into screen coordinates.
+    int screenX = (int)(CENTER_X + projX);
+    int screenY = (int)(CENTER_Y - projY);
+    // Skip drawing if the coordinates fall outside the display.
+    if (screenX < 0 || screenX >= WIDTH || screenY < 0 || screenY >= HEIGHT)
+      continue;
+
+    // ---- Brightness Calculation ----
+    // Calculate the base radius (distance from swirl center) to modulate brightness.
+    float baseRadius = sqrtf(x*x + y*y);
+    uint8_t brightness = (uint8_t)fmin(255.0f * (baseRadius / MAX_RADIUS), 255.0f);
+
+    // ---- Color Adjustment ----
+    // Adjust the hue by the provided offset.
+    uint8_t hue = swirl[i].baseHue + hueOffset;
+    uint8_t rr, gg, bb;
+    hsvToRgb(hue, 255, brightness, rr, gg, bb);
+
+    // Draw the pixel on the matrix using the computed RGB color.
+    matrix->drawPixel(screenX, screenY, matrix->color565(rr, gg, bb));
+    // Update the fade buffer so future frames can apply a fading trail effect.
+    frameBuf[screenY][screenX][0] = rr;
+    frameBuf[screenY][screenX][1] = gg;
+    frameBuf[screenY][screenX][2] = bb;
+  }
+}
+
+// ===== Explosion Drawing =====
+// This function draws an explosion effect when the two swirls collide.
+// It expands a radial blast and modifies pixel colors based on the explosion progress.
+void drawExplosion(uint32_t now, float cx, float cy) {
+  // Calculate the explosion progress (0.0 at start, 1.0 at completion).
+  float elapsed = (now - explosionStartTime);
+  float progress = elapsed / (float)EXPLOSION_DURATION;
+  if (progress > 1.0f) progress = 1.0f;
+
+  // Compute the maximum radius of the blast (using 75% of the screen's diagonal length).
+  float maxR = sqrtf((float)(WIDTH * WIDTH + HEIGHT * HEIGHT)) * 0.75f;
+  float blastRadius = maxR * progress;
+
+  // Set explosion color: starts as bright white with a red tint, dims as the explosion expands.
+  int baseVal = (int)(255 * (1.0f - progress));
+  if (baseVal < 0) baseVal = 0;
+  uint8_t rr = 255, gg = (uint8_t)baseVal, bb = (uint8_t)baseVal / 2;
+
+  // Convert the explosion center to screen coordinates.
+  // For simplicity, the swirl center coordinates are directly treated as screen coordinates.
+  int scx = (int)(CENTER_X + cx);
+  int scy = (int)(CENTER_Y - cy);
+
+  // Loop through every pixel on the screen.
+  for (int y = 0; y < HEIGHT; y++) {
+    for (int x = 0; x < WIDTH; x++) {
+      int dx = x - scx;
+      int dy = y - scy;
+      // Calculate the distance from the explosion center.
+      float dist = sqrtf(dx * dx + dy * dy);
+      // If the pixel is within the blast radius, modify its color.
+      if (dist <= blastRadius) {
+        // Determine how close the pixel is to the center (for gradient effect).
+        float f = 1.0f - (dist / blastRadius);
+        int cval = (int)(baseVal + (255 - baseVal) * f);
+        if (cval > 255) cval = 255;
+        // Overwrite the pixel color for dramatic effect.
+        uint8_t newR = (uint8_t)cval;
+        uint8_t newG = (uint8_t)(cval / 4);
+        uint8_t newB = (uint8_t)(cval / 6);
+        // Update the fade buffer.
+        frameBuf[y][x][0] = newR;
+        frameBuf[y][x][1] = newG;
+        frameBuf[y][x][2] = newB;
+        // Draw the updated pixel on the matrix.
+        matrix->drawPixel(x, y, matrix->color565(newR, newG, newB));
+      }
+    }
+  }
+}
+
+// ===== Reset the Scene =====
+// This function resets the entire animation scene after an explosion has finished.
+// It regenerates the swirls, resets rotation angles and positions, and clears the fade buffer.
+void resetScene() {
+  // Regenerate the star positions for both swirls.
+  generateSpiral(swirlA);
+  generateSpiral(swirlB);
+
+  // Reset all rotational angles.
+  rotAx = rotAy = rotAz = 0.0f;
+  rotBx = rotBy = rotBz = 0.0f;
+  swirlOrbitAngle = 0.0f;
+
+  // Reset the swirl centers to their initial positions.
+  swirlACenterX = swirlACenterX_init;
+  swirlACenterY = swirlACenterY_init;
+  swirlBCenterX = swirlBCenterX_init;
+  swirlBCenterY = swirlBCenterY_init;
+
+  // Clear the fade buffer and the display by setting every pixel to black.
+  for (int y = 0; y < HEIGHT; y++){
+    for (int x = 0; x < WIDTH; x++){
+      frameBuf[y][x][0] = 0;
+      frameBuf[y][x][1] = 0;
+      frameBuf[y][x][2] = 0;
+      matrix->drawPixel(x, y, 0); // Draw black.
+    }
+  }
+  // Swap the double buffer to update the display.
+  matrix->flipDMABuffer();
+}
+
+// ===== Main Loop =====
+// This is the main animation loop, called repeatedly. It handles fading, drawing the swirls,
+// updating positions and rotations, handling collisions, and managing the explosion effect.
+void loop() {
+  // Get the current time in milliseconds.
+  uint32_t now = millis();
+
+  // ----- 1) Fade the Old Frame -----
+  // Loop through every pixel to gradually fade the previous frame,
+  // creating a trailing effect.
+  for (int y = 0; y < HEIGHT; y++) {
+    for (int x = 0; x < WIDTH; x++) {
+      uint8_t r = frameBuf[y][x][0];
+      uint8_t g = frameBuf[y][x][1];
+      uint8_t b = frameBuf[y][x][2];
+      // Multiply each color channel by the fade factor and shift right (divide by 256).
+      r = (r * FADE_FACTOR) >> 8;
+      g = (g * FADE_FACTOR) >> 8;
+      b = (b * FADE_FACTOR) >> 8;
+      // Update the fade buffer and redraw the pixel.
+      frameBuf[y][x][0] = r;
+      frameBuf[y][x][1] = g;
+      frameBuf[y][x][2] = b;
+      matrix->drawPixel(x, y, matrix->color565(r, g, b));
+    }
+  }
+
+  // ----- 2) Explosion Handling -----
+  // If an explosion is currently in progress, draw the explosion effect.
+  if (inExplosion) {
+    drawExplosion(now, collisionX, collisionY);
+
+    // Once the explosion duration is exceeded, reset the scene.
+    if (now - explosionStartTime > EXPLOSION_DURATION) {
+      inExplosion = false;
+      resetScene();
+    }
+
+    // Swap buffers and yield control before processing the next frame.
+    matrix->flipDMABuffer();
+    yield();
+    return;
+  }
+
+  // ----- 3) Normal Swirl Animation -----
+  // Compute the warp tilt angle based on a sine wave that oscillates over WARP_PERIOD_MS.
+  float warpPhase = 2.0f * M_PI * (float)((now % WARP_PERIOD_MS) / (double)WARP_PERIOD_MS);
+  float tiltAngle = WARP_MAX_ANGLE * sinf(warpPhase);
+
+  // Determine the hue offset for the color cycle.
+  uint8_t timeHueOffset = (now % COLOR_CYCLE_MS) * 256 / COLOR_CYCLE_MS;
+
+  // ----- Update Swirl Orbit -----
+  // Increment the orbit angle and use sine/cosine to calculate the new positions.
+  swirlOrbitAngle += swirlOrbitSpeed;
+  if (swirlOrbitAngle > 2 * M_PI) swirlOrbitAngle -= 2 * M_PI;
+  float cosO = cosf(swirlOrbitAngle);
+  float sinO = sinf(swirlOrbitAngle);
+  // Update both swirls' centers to orbit in opposite directions.
+  swirlACenterX = swirlACenterX_init + swirlOrbitRadius * cosO;
+  swirlACenterY = swirlACenterY_init + swirlOrbitRadius * sinO;
+  swirlBCenterX = swirlBCenterX_init - swirlOrbitRadius * cosO;
+  swirlBCenterY = swirlBCenterY_init - swirlOrbitRadius * sinO;
+
+  // ----- Update Rotation Angles -----
+  // Increment rotation angles for each swirl by their respective speeds.
+  rotAx += speedAx; if (rotAx > 2 * M_PI) rotAx -= 2 * M_PI;
+  rotAy += speedAy; if (rotAy > 2 * M_PI) rotAy -= 2 * M_PI;
+  rotAz += speedAz; if (rotAz > 2 * M_PI) rotAz -= 2 * M_PI;
+  rotBx += speedBx; if (rotBx > 2 * M_PI) rotBx -= 2 * M_PI;
+  rotBy += speedBy; if (rotBy > 2 * M_PI) rotBy -= 2 * M_PI;
+  rotBz += speedBz; if (rotBz > 2 * M_PI) rotBz -= 2 * M_PI;
+
+  // ----- Draw the Two Swirls -----
+  // Draw swirl A with its current center and rotation parameters.
+  drawSwirl(swirlA, swirlACenterX, swirlACenterY, rotAx, rotAy, rotAz, tiltAngle, timeHueOffset);
+  // Draw swirl B similarly.
+  drawSwirl(swirlB, swirlBCenterX, swirlBCenterY, rotBx, rotBy, rotBz, tiltAngle, timeHueOffset);
+
+  // ----- 4) Collision Detection -----
+  // Check the distance between the two swirl centers.
+  float dx = swirlACenterX - swirlBCenterX;
+  float dy = swirlACenterY - swirlBCenterY;
+  float distSq = dx * dx + dy * dy;
+  // If the swirls are very close, trigger an explosion.
+  if (distSq < 8.0f * 8.0f) {
+    inExplosion = true;
+    explosionStartTime = now;
+    // Store the collision center (average of the two centers) for the explosion effect.
+    collisionX = (swirlACenterX + swirlBCenterX) * 0.5f; 
+    collisionY = (swirlACenterY + swirlBCenterY) * 0.5f;
+  }
+
+  // Swap the double buffer to display the newly drawn frame.
+  matrix->flipDMABuffer();
+  yield();  // Yield to allow background tasks to run.
+}
